@@ -1,0 +1,11 @@
+Instucsioneh:
+
+
+1. En la nueva terminal, el comando antes de liarla:
+
+	source .venv/bin/activate
+	
+2. run the web by:
+
+	streamlit run app/Home.py
+
