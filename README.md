@@ -1,4 +1,4 @@
-# 🧬 BioVis Studio — Interactive Bioinformatics Data Visualization Platform
+# 🧬🌈 BioVis Studio — Interactive Bioinformatics Data Visualization Platform
 
 ## 🏷️ Overview
 BioVis Studio is a modular platform for building **interactive visualizations for biological data**
