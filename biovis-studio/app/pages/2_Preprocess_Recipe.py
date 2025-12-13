@@ -13,6 +13,21 @@ import streamlit as st
 import pandas as pd
 from core.preprocess import apply_recipe, suggest_recipe  # noqa: E401
 
+def metric_card(title, value):
+    st.markdown(
+        f"""
+        <div style="padding: 0.5rem 0;">
+            <div style="font-size: 1.2rem; font-weight: 600;">
+                {title}
+            </div>
+            <div style="font-size: 0.95rem; color: #6e6e6e;">
+                {value}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 st.header("2) Preprocess Recipe")
 
 if "raw_df" not in st.session_state:
@@ -23,8 +38,20 @@ raw = st.session_state["raw_df"]
 
 # Auto-suggest a recipe based on schema
 suggestion = suggest_recipe(raw)
+
 with st.expander("Suggested recipe (click to open)"):
-    st.json(suggestion, expanded=False)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        metric_card(
+            "Log transform",
+            "Enabled" if suggestion["log1p"] else "Disabled"
+        )
+
+    with col2:
+        metric_card("Scaler", suggestion["scaler"])
+
+    with col3:
+        metric_card("Imputer", suggestion["imputer"])
 
 st.subheader("Edit Recipe")
 with st.form("recipe_form"):
