@@ -24,7 +24,7 @@ from core.data_quality import (
 from core.normalization import normalize_data, get_normalization_recommendations, detect_batch_effects
 
 st.set_page_config(page_title="Data Preparation", layout="wide")
-st.header("1b) Data Preparation & Quality Control")
+st.header("2️⃣ Data Preparation & Quality Control")
 
 if "working_df" not in st.session_state:
     st.error("❌ Please upload and profile data in step 1 first!")
@@ -104,6 +104,7 @@ with tab_missing:
             after = len(clean_idx)
             st.success(f"✅ Removed {before - after} rows ({round((before-after)/before*100, 1)}%)")
             st.session_state["missing_strategy"] = "rows_removed"
+            st.rerun()
         elif missing_strategy == "Remove features with >50% missing":
             high_missing = [k for k, v in missing_info["columns_with_missing"].items() 
                           if v/len(numeric_df) > 0.5]
@@ -115,6 +116,7 @@ with tab_missing:
             else:
                 st.info("✅ No features with >50% missing data.")
             st.session_state["missing_strategy"] = "cols_removed"
+            st.rerun()
 
 # ==================== TAB 2: QC METRICS ====================
 with tab_qc:
@@ -152,7 +154,7 @@ with tab_qc:
         fig = px.histogram(
             sample_qc, x="detection_rate_%",
             title="Distribution of Detection Rates",
-            nbinsx=30,
+            nbins=30,
             labels={"detection_rate_%": "Detection Rate (%)"}
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -174,7 +176,7 @@ with tab_qc:
         fig = px.histogram(
             feature_qc, x="detection_rate_%",
             title="Distribution of Feature Detection Rates",
-            nbinsx=30,
+            nbins=30,
             labels={"detection_rate_%": "Detection Rate (%)"}
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -454,14 +456,14 @@ with tab_review:
         outlier_action = st.session_state.get("outlier_action", "Keep all")
         outlier_flag = None
         
-        if outlier_action == "Remove flagged rows":
+        if "Remove flagged rows" in outlier_action:
             outliers = st.session_state.get("outliers_univariate", {})
             any_outlier = np.zeros(len(normalized_df), dtype=bool)
             for flags in outliers.values():
                 any_outlier |= flags
             normalized_df = normalized_df[~any_outlier]
             st.session_state["rows_removed_outliers"] = any_outlier.sum()
-        elif outlier_action == "Flag for visualization (keep in data)":
+        elif "Flag for visualization" in outlier_action:
             outliers = st.session_state.get("outliers_univariate", {})
             any_outlier = np.zeros(len(normalized_df), dtype=bool)
             for flags in outliers.values():
