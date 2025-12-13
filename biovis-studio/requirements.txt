@@ -28,3 +28,4 @@ pre-commit
 ruff
 pytest
 pytest-cov
+kaleido
