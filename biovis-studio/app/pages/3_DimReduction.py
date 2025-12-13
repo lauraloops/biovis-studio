@@ -25,6 +25,8 @@ meta = st.session_state.get("prep_meta", pd.DataFrame(index=X.index))
 
 method = st.radio("Method", ["PCA", "UMAP", "t-SNE"], horizontal=True)
 
+n_samples = X.shape[0]
+
 if method == "PCA":
     n_comp = st.slider("Components", 2, max(2, min(10, X.shape[1])), 2)
     pca_res = run_pca(X, n_components=n_comp)
@@ -43,11 +45,15 @@ if method == "PCA":
     st.dataframe(pca_res.loadings.head(20), use_container_width=True)
 
 else:
-    if method == "UMAP":
-        n_neighbors = st.slider("n_neighbors", 5, 50, 15)
+    if method == "UMAP" and n_samples >= 8:
+        max_neighbors = (n_samples // 2) - 1
+        n_neighbors = st.slider("n_neighbors", 2, max_neighbors, min(15, max_neighbors) )
         min_dist = st.slider("min_dist", 0.0, 0.99, 0.1)
         emb = run_umap(X, n_neighbors=n_neighbors, min_dist=min_dist)
         coords = pd.DataFrame(emb.embedding, columns=["UMAP1","UMAP2"], index=X.index)
+    elif method == "UMAP" and n_samples < 8:
+        st.warning("UMAP requires at least 8 samples.")
+        st.stop()
     else:
         perplexity = st.slider("perplexity (t-SNE)", 5, min(80, max(5, X.shape[0]//3)), 30)
         emb = run_tsne(X, perplexity=perplexity)
