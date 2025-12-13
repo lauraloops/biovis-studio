@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Python
 __pycache__/
 *.pyc
@@ -13,14 +16,17 @@ venv/
 env/
 .env
 
-# OS / editors
-.DS_Store
+# Streamlit
+.streamlit/
+
+# Editors
 .vscode/
 .idea/
 
-# Logs / cache
+# Caches / logs
 *.log
 .ipynb_checkpoints/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
