@@ -1,4 +1,8 @@
-import os, sys
+import os, sys, tempfile
+import streamlit as st
+import pandas as pd
+import numpy as np
+
 HERE = os.path.dirname(__file__)
 CANDIDATES = [
     os.path.abspath(os.path.join(HERE, "..")),
@@ -9,8 +13,6 @@ for ROOT in CANDIDATES:
         sys.path.insert(0, ROOT)
         break
 
-import pandas as pd
-import streamlit as st
 from core.io import read_any, infer_schema, detect_id_columns, detect_duplicate_ids, infer_orientation
 
 st.set_page_config(page_title="Import & Profile", layout="wide")
@@ -21,104 +23,91 @@ uploaded = st.file_uploader(
     type=["csv", "tsv", "txt", "parquet"]
 )
 
-if uploaded:
-    df = read_any(uploaded)
-    st.session_state["raw_df"] = df
-    st.session_state["working_df"] = df.copy()
-    
-    tab_profile, tab_structure, tab_metadata = st.tabs(
-        ["📊 Profile", "🔧 Structure & Orientation", "🏷️ Metadata Columns"]
-    )
-    
-    with tab_profile:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("📝 Rows", df.shape[0])
-        with col2:
-            st.metric("📋 Columns", df.shape[1])
-        with col3:
-            st.metric("📦 Size (MB)", round(df.memory_usage(deep=True).sum() / 1e6, 2))
-        
-        st.subheader("Data Schema")
-        schema = infer_schema(df)
-        st.dataframe(schema, use_container_width=True, hide_index=True)
-        
-        st.subheader("Preview (First 20 rows)")
-        st.dataframe(df.head(20), use_container_width=True)
-    
-    with tab_structure:
-        st.subheader("Data Orientation Analysis")
-        orientation = infer_orientation(df)
-        st.info(f"**Detected:** {orientation['reason']}")
-        st.write(f"**Recommendation:** {orientation['recommendation']}")
-        
-        if orientation["orientation"] == "features_x_samples":
-            if st.button("🔄 Transpose Data"):
-                df = df.T
-                st.session_state["raw_df"] = df
-                st.session_state["working_df"] = df.copy()
-                st.success("✅ Data transposed!")
-                st.rerun()
-        
-        # Detect duplicate columns
-        st.subheader("Duplicate Column Detection")
-        duplicates = detect_duplicate_ids(df)
-        if duplicates:
-            st.warning(f"⚠️ Detected duplicate/highly-correlated columns:")
-            for pair, type_ in duplicates.items():
-                st.write(f"- {pair} ({type_})")
+def _safe_to_temp(uploaded_file) -> str:
+    # Persist the uploaded file to a temp path to allow efficient file IO
+    suffix = os.path.splitext(uploaded_file.name)[1].lower()
+    fd, tmp_path = tempfile.mkstemp(prefix="biovis_", suffix=suffix)
+    with os.fdopen(fd, "wb") as out:
+        out.write(uploaded_file.read())
+    return tmp_path
+
+def _read_large_csv(path: str, sep: str | None = None, max_rows: int | None = None) -> pd.DataFrame:
+    # Detect delimiter if not provided
+    if sep is None:
+        if path.endswith(".tsv") or path.endswith(".txt"):
+            sep = "\t"
         else:
-            st.success("✅ No duplicate columns detected.")
-    
-    with tab_metadata:
-        st.subheader("🏷️ Identify ID & Metadata Columns")
-        
-        id_candidates = detect_id_columns(df, threshold=0.95)
-        if id_candidates:
-            st.warning(f"🔍 **Detected likely ID columns:** {', '.join(id_candidates)}")
-        
-        st.subheader("Select columns to keep")
-        all_cols = list(df.columns)
-        cols_to_keep = st.multiselect(
-            "Keep these columns:",
-            all_cols,
-            default=all_cols,
-            help="Uncheck ID/index columns to remove them"
+            sep = ","
+    # Estimate total rows for progress (optional quick pass)
+    total_rows = None
+    try:
+        with open(path, "rb") as f:
+            total_rows = sum(1 for _ in f) - 1  # exclude header
+    except Exception:
+        pass
+
+    chunks = []
+    chunksize = 250_000  # tune for memory; 250k rows per chunk
+    rows_read = 0
+    prog = st.progress(0, text="Reading CSV in chunks…")
+    for i, chunk in enumerate(pd.read_csv(
+        path,
+        sep=sep,
+        chunksize=chunksize,
+        low_memory=True,
+        engine="c",
+    )):
+        chunks.append(chunk)
+        rows_read += len(chunk)
+        if total_rows:
+            prog.progress(min(1.0, rows_read / max(total_rows, 1.0)), text=f"Reading… {rows_read:,}/{total_rows:,} rows")
+        else:
+            prog.progress(0.0, text=f"Reading… {rows_read:,} rows")
+        if max_rows and rows_read >= max_rows:
+            break
+    prog.empty()
+    df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+    return df
+
+def _read_parquet(path: str) -> pd.DataFrame:
+    # PyArrow-backed reader is fast and memory efficient
+    return pd.read_parquet(path)
+
+if uploaded:
+    st.info("Large file detected? We store to a temp file and parse in chunks for stability.")
+    tmp_path = _safe_to_temp(uploaded)
+
+    try:
+        if uploaded.name.lower().endswith((".parquet", ".pq")):
+            df = _read_parquet(tmp_path)
+        else:
+            df = _read_large_csv(tmp_path)
+
+        st.session_state["raw_df"] = df
+        st.session_state["working_df"] = df.copy()
+
+        st.success(f"✅ Loaded {len(df):,} rows × {len(df.columns):,} columns from {uploaded.name}")
+        st.caption(f"Temp path: {tmp_path}")
+
+        tab_profile, tab_structure, tab_metadata = st.tabs(
+            ["📊 Profile", "🔧 Structure & Orientation", "🏷️ Metadata Columns"]
         )
-        
-        if len(cols_to_keep) < len(all_cols):
-            if st.button("✂️ Remove unchecked columns"):
-                cols_to_remove = [c for c in all_cols if c not in cols_to_keep]
-                df = df[cols_to_keep]
-                st.session_state["working_df"] = df
-                st.session_state["raw_df"] = df
-                st.success(f"✅ Removed: {cols_to_remove}")
-                st.rerun()
-        
-        st.subheader("🏷️ Classify Metadata Columns")
-        st.caption("These columns won't be analyzed but will be preserved for visualization")
-        
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        default_metadata = [c for c in df.columns if c not in numeric_cols]
-        
-        selected_metadata = st.multiselect(
-            "Select metadata columns (group, batch, condition, cell_type, etc.):",
-            df.columns,
-            default=default_metadata if default_metadata else []
-        )
-        
-        st.session_state["metadata_cols"] = selected_metadata
-        st.session_state["feature_cols"] = [c for c in df.columns if c not in selected_metadata]
-        
-        if selected_metadata:
-            st.dataframe(df[selected_metadata].head(10), use_container_width=True)
-    
-    st.info("✅ Next: Go to **Data Preparation** to handle missing data, outliers, and normalization.")
+        with tab_profile:
+            st.dataframe(df.head(100), use_container_width=True)
+            st.write(df.describe(include="all").transpose())
+
+        with tab_structure:
+            st.write("Infer orientation and structure in Data Preparation.")
+
+        with tab_metadata:
+            st.write("Select metadata columns in Data Preparation.")
+
+    except Exception as e:
+        st.error(f"❌ Failed to read file: {e}")
+        st.exception(e)
+    finally:
+        # Optional: keep temp for debugging; otherwise uncomment to remove
+        # os.remove(tmp_path)
+        pass
 else:
-    st.info("""
-    📁 Upload a CSV, TSV, or Parquet file to begin.
-    
-    **Sample data in this project:**
-    - `/data/Heart.csv`
-    - `/data/demo_expression.csv`
-    """)
+    st.warning("Upload a CSV/TSV or Parquet file to begin.")
