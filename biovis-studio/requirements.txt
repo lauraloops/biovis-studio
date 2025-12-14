@@ -28,4 +28,5 @@ pre-commit
 ruff
 pytest
 pytest-cov
+google-genai
 kaleido

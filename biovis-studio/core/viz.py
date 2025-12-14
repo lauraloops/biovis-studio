@@ -17,7 +17,3 @@ def make_scatter(meta: pd.DataFrame, color_by=None, shape_by=None, size_by=None)
     fig = px.scatter(meta, x=x_col, y=y_col, color=color_by, symbol=shape_by, size=size_by)
     fig.update_layout(margin=dict(l=10,r=10,t=40,b=10))
     return fig
-
-def fig_to_png_bytes(fig):
-    # Requires kaleido
-    return fig.to_image(format="png")
