@@ -1,23 +1,25 @@
-import os, sys
-HERE = os.path.dirname(__file__)
-CANDIDATES = [
-    os.path.abspath(os.path.join(HERE, "..")),        # works for Home.py
-    os.path.abspath(os.path.join(HERE, "..", "..")),  # works for pages/*
-]
-for ROOT in CANDIDATES:
-    if os.path.isdir(os.path.join(ROOT, "core")) and ROOT not in sys.path:
-        sys.path.insert(0, ROOT)
-        break
-
+import os
 import streamlit as st
 from core.export import export_notebook
 
+st.set_page_config(page_title="5) Export & Share", layout="wide")
 st.header("5) Export & Share")
 
-if "prep_meta" not in st.session_state:
-    st.warning("Nothing to export yet.")
-    st.stop()
+# Choose export directory (user-writable)
+default_dir = os.path.join(os.getcwd(), "exports")
+out_dir = st.text_input("Export directory", value=default_dir)
 
-nb_path = export_notebook(st.session_state)
-st.success("Notebook generated.")
-st.code(nb_path)
+if st.button("Generate Reproducibility Notebook"):
+    try:
+        nb_path = export_notebook(st.session_state, out_dir=out_dir)
+        st.success(f"Notebook created at: {nb_path}")
+        with open(nb_path, "rb") as f:
+            st.download_button(
+                label="Download notebook (.ipynb)",
+                data=f.read(),
+                file_name=os.path.basename(nb_path),
+                mime="application/x-ipynb+json"
+            )
+    except Exception as e:
+        st.error(f"Failed to export notebook: {e}")
+        st.exception(e)
