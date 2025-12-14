@@ -1,4 +1,5 @@
 import os, sys
+import numpy as np
 HERE = os.path.dirname(__file__)
 CANDIDATES = [
     os.path.abspath(os.path.join(HERE, "..")),        # works for Home.py
@@ -11,7 +12,7 @@ for ROOT in CANDIDATES:
 
 import streamlit as st
 import pandas as pd
-from core.dr import run_pca, run_umap, run_tsne
+from core.embeddings import run_pca, run_umap, run_tsne
 from core.metrics import trustworthiness_knn
 
 st.header("3) Dimensionality Reduction")
@@ -76,8 +77,13 @@ else:
 
     from sklearn.decomposition import PCA
 
-    Xp = PCA(n_components=0.9).fit_transform(X.values)
-    tw, knn_pres = trustworthiness_knn(Xp, emb.embedding)
+    if X.shape[0] > 5:
+        Xp = PCA(n_components=0.9).fit_transform(X.values)
+        tw, knn_pres = trustworthiness_knn(Xp, emb.embedding)
+    else:
+        tw, knn_pres = np.nan, np.nan
+
+    
 
     m1, m2 = st.columns(2)
     m1.metric("Trustworthiness", f"{tw:.3f}")
