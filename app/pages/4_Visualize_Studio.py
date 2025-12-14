@@ -1,29 +1,22 @@
 import os, sys
+import pandas as pd
+import numpy as np
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
+from dataclasses import dataclass
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from scipy.cluster.hierarchy import dendrogram, linkage
+
+# Path fix so `core/` is importable
 HERE = os.path.dirname(__file__)
-CANDIDATES = [
+for ROOT in [
     os.path.abspath(os.path.join(HERE, "..")),
     os.path.abspath(os.path.join(HERE, "..", "..")),
-]
-for ROOT in CANDIDATES:
+]:
     if os.path.isdir(os.path.join(ROOT, "core")) and ROOT not in sys.path:
         sys.path.insert(0, ROOT)
         break
-
-import json
-import base64
-from dataclasses import dataclass
-from typing import Optional, List
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from sklearn.preprocessing import StandardScaler
-from scipy.cluster.hierarchy import dendrogram, linkage
-from scipy.spatial.distance import pdist, squareform
 
 st.set_page_config(page_title="4) Visualize Studio", layout="wide")
 
@@ -35,14 +28,12 @@ class JournalStyle:
     line_width: float
     marker_size: int
     grid: bool
-    background: str
-    paper_bg: str
 
 JOURNAL_STYLES = {
-    "Nature": JournalStyle("Nature", "Arial", 14, 2.0, 8, True, "rgba(255,255,255,0.05)", "#ffffff"),
-    "Science": JournalStyle("Science", "Helvetica", 13, 1.8, 7, True, "rgba(255,255,255,0.05)", "#ffffff"),
-    "IEEE": JournalStyle("IEEE", "Times New Roman", 12, 1.6, 7, True, "rgba(255,255,255,0.05)", "#ffffff"),
-    "Plain": JournalStyle("Plain", "Arial", 12, 1.5, 6, True, "rgba(0,0,0,0)", "#ffffff"),
+    "Nature": JournalStyle("Nature", "Arial", 14, 2.0, 8, True),
+    "Science": JournalStyle("Science", "Helvetica", 13, 1.8, 7, True),
+    "IEEE": JournalStyle("IEEE", "Times New Roman", 12, 1.6, 7, True),
+    "Plain": JournalStyle("Plain", "Arial", 12, 1.5, 6, True),
 }
 
 COLORBLIND_SAFE = {
@@ -76,144 +67,92 @@ def make_ticks(vals, sigfigs):
     return tickvals, ticktext
 
 def perform_clustering(df: pd.DataFrame, method: str, **kwargs):
-    """Perform clustering and return labels."""
     X = df.select_dtypes(include=[np.number]).values
-    
     if method == "kmeans":
         n_clusters = kwargs.get("n_clusters", 3)
         model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         labels = model.fit_predict(X)
         return labels, model
-    
     elif method == "hierarchical":
         n_clusters = kwargs.get("n_clusters", 3)
         linkage_method = kwargs.get("linkage_method", "ward")
         model = AgglomerativeClustering(n_clusters=n_clusters, linkage=linkage_method)
         labels = model.fit_predict(X)
         return labels, model
-    
     elif method == "dbscan":
         eps = kwargs.get("eps", 0.5)
         min_samples = kwargs.get("min_samples", 5)
         model = DBSCAN(eps=eps, min_samples=min_samples)
         labels = model.fit_predict(X)
         return labels, model
-    
     return None, None
 
 def create_dendrogram(df: pd.DataFrame, linkage_method: str = "ward"):
-    """Create hierarchical clustering dendrogram."""
     X = df.select_dtypes(include=[np.number]).values
     Z = linkage(X, method=linkage_method)
-    
-    fig = go.Figure()
-    
-    # Calculate dendrogram
     dend = dendrogram(Z, no_plot=True)
-    
-    icoord = np.array(dend['icoord'])
-    dcoord = np.array(dend['dcoord'])
-    
-    for i in range(len(icoord)):
+    fig = go.Figure()
+    for i in range(len(dend['icoord'])):
         fig.add_trace(go.Scatter(
-            x=icoord[i],
-            y=dcoord[i],
+            x=dend['icoord'][i],
+            y=dend['dcoord'][i],
             mode='lines',
             line=dict(color='rgb(100,100,100)', width=1),
             showlegend=False,
             hoverinfo='skip'
         ))
-    
     fig.update_layout(
         title="Hierarchical Clustering Dendrogram",
         xaxis=dict(title="Sample Index", showticklabels=False),
         yaxis=dict(title="Distance"),
         height=400
     )
-    
     return fig
 
 st.title("4️⃣ Visualize Studio")
-st.caption("Advanced visualization lab with dimensionality reduction, clustering, and publication-ready export")
+st.caption("Visualization lab with DR layers, clustering, significant figures, and export")
 
-# Check for data from previous steps
+# Preconditions — use data from previous steps only
 if "prep_meta" not in st.session_state or st.session_state.get("prep_meta") is None:
-    st.error("❌ No processed data found. Please complete steps 1-3 first!")
-    
-    with st.expander("🔍 Debug: Session State Contents"):
-        st.write("Available keys:", list(st.session_state.keys()))
-        if "X" in st.session_state:
-            st.write("X shape:", st.session_state["X"].shape)
-        if "metadata" in st.session_state:
-            st.write("metadata shape:", st.session_state["metadata"].shape)
-    
-    st.info("💡 Go back to **Import and Profile** → **Data Preparation** → **DimReduction** to prepare your data.")
+    st.error("No processed data found. Complete steps 1–3 first.")
     st.stop()
 
-# Load data from session state
 df = st.session_state["prep_meta"].copy()
 metadata_cols = st.session_state.get("metadata_cols", [])
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+categorical_cols = [c for c in metadata_cols if c in df.columns]
 
-st.success(f"✅ Loaded {len(df)} samples with {len(df.columns)} features from previous steps")
-
-# Sidebar configuration
+# Sidebar settings
 with st.sidebar:
-    st.subheader("📊 Visualization Settings")
-    
-    # Theme
-    theme_bg = st.selectbox("Background theme", ["light", "dark"], index=0)
-    
-    # Determine available coordinate columns
-    coord_options = []
-    if "PC1" in df.columns and "PC2" in df.columns:
-        coord_options.extend([("PC1", "PC2", "PCA")])
-    if "UMAP1" in df.columns and "UMAP2" in df.columns:
-        coord_options.extend([("UMAP1", "UMAP2", "UMAP")])
-    if "TSNE1" in df.columns and "TSNE2" in df.columns:
-        coord_options.extend([("TSNE1", "TSNE2", "t-SNE")])
-    
-    if not coord_options:
-        st.error("No dimensionality reduction coordinates found. Run PCA/UMAP/t-SNE first.")
-        st.stop()
-    
-    coord_choice = st.selectbox(
-        "Coordinate system",
-        options=range(len(coord_options)),
-        format_func=lambda i: coord_options[i][2]
-    )
-    
-    x_col, y_col, coord_label = coord_options[coord_choice]
-    
-    # Color/Shape/Size mappings
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    categorical_cols = [c for c in metadata_cols if c in df.columns]
-    
+    st.subheader("Data & Mappings")
+    # Coordinate system
+    coords = []
+    if {"PC1","PC2"}.issubset(df.columns): coords.append(("PC1","PC2","PCA"))
+    if {"UMAP1","UMAP2"}.issubset(df.columns): coords.append(("UMAP1","UMAP2","UMAP"))
+    if {"TSNE1","TSNE2"}.issubset(df.columns): coords.append(("TSNE1","TSNE2","t-SNE"))
+    coord_choice = st.selectbox("Coordinate system", options=range(len(coords)), format_func=lambda i: coords[i][2])
+    x_col, y_col, coord_label = coords[coord_choice] if coords else (None, None, "None")
+
     color_by = st.selectbox("Color by", options=["None"] + categorical_cols + numeric_cols, index=0)
     shape_by = st.selectbox("Shape by", options=["None"] + categorical_cols, index=0)
-    size_by = st.selectbox("Size by", options=["None"] + numeric_cols, index=0)
-    
-    st.divider()
-    
-    # Style presets
-    st.subheader("🎨 Style")
+    size_by = st.selectbox("Size by (numeric)", options=["None"] + numeric_cols, index=0)
+
+    st.subheader("Style")
+    theme_bg = st.selectbox("Theme", ["light", "dark"], index=0)
     style_name = st.selectbox("Journal preset", list(JOURNAL_STYLES.keys()), index=3)
-    palette_name = st.selectbox("Color palette", list(COLORBLIND_SAFE.keys()), index=0)
-    
-    st.divider()
-    
-    # Formatting
-    st.subheader("📐 Formatting")
-    sigfigs = st.slider("Significant figures", min_value=2, max_value=6, value=3)
-    x_label = st.text_input("X label", value=x_col)
-    y_label = st.text_input("Y label", value=y_col)
+    palette_name = st.selectbox("Palette", list(COLORBLIND_SAFE.keys()), index=0)
+
+    st.subheader("Formatting")
+    sigfigs = st.slider("Significant figures", 2, 6, 3)
+    x_label = st.text_input("X label", value=x_col or "")
+    y_label = st.text_input("Y label", value=y_col or "")
     show_grid = st.checkbox("Show grid", value=True)
     show_legend = st.checkbox("Show legend", value=True)
 
-# Main content tabs
 tab_scatter, tab_clustering, tab_stats, tab_export = st.tabs([
     "📊 Scatter Plot",
-    "🔬 Clustering Analysis",
-    "📈 Statistics & Overlays",
+    "🔬 Clustering",
+    "📈 Overlays",
     "💾 Export"
 ])
 

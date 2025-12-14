@@ -5,7 +5,6 @@ from core.export import export_notebook
 st.set_page_config(page_title="5) Export & Share", layout="wide")
 st.header("5) Export & Share")
 
-# Choose export directory (user-writable)
 default_dir = os.path.join(os.getcwd(), "exports")
 out_dir = st.text_input("Export directory", value=default_dir)
 
